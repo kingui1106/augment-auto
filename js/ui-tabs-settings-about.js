@@ -223,54 +223,70 @@ StripeHelperUI.prototype.renderSettingsTab = async function() {
             try {
                 console.log('[Settings] 正在获取 Cookie...');
 
-                // 先检查是否有打开 GPTMail 网站的标签页
-                const tabs = await chrome.tabs.query({ url: 'https://mail.chatgpt.org.uk/*' });
-                console.log('[Settings] 找到 GPTMail 标签页:', tabs.length, '个');
-
-                if (tabs.length === 0) {
-                    const confirmOpen = confirm(
-                        '⚠️ 检测到您还没有打开 GPTMail 网站\n\n' +
-                        '要获取 cf_clearance Cookie，您需要：\n' +
-                        '1. 先访问 https://mail.chatgpt.org.uk/\n' +
-                        '2. 完成 Cloudflare 人机验证\n' +
-                        '3. 然后再刷新 Cookie\n\n' +
-                        '是否现在打开 GPTMail 网站？'
-                    );
-
-                    if (confirmOpen) {
-                        window.open('https://mail.chatgpt.org.uk/', '_blank');
-                        alert('✅ 已打开 GPTMail 网站\n\n' +
-                              '请在新标签页中：\n' +
-                              '1. 完成 Cloudflare 验证（如果出现）\n' +
-                              '2. 等待页面完全加载\n' +
-                              '3. 然后返回此处再次点击"🔄 刷新 Cookie"');
-                    }
-                    return;
-                }
-
-                // 首先尝试从请求头捕获的 Cookie 获取（优先级最高）
-                console.log('[Settings] 首先尝试从请求头捕获获取...');
+                // 先检查是否有打开 GPTMail 网站的标签页（通过 background script）
                 chrome.runtime.sendMessage({
-                    action: 'getCapturedCookie'
-                }, async (capturedResponse) => {
-                    let response;
-
-                    if (capturedResponse && capturedResponse.success && capturedResponse.hasCfClearance) {
-                        // 成功从请求头获取到 cf_clearance
-                        console.log('[Settings] ✓ 从请求头捕获成功获取！');
-                        response = capturedResponse;
-                        await this.processCookieResponse(response);
-                    } else {
-                        // 请求头没有捕获到，回退到 Cookie API
-                        console.log('[Settings] 请求头未捕获，使用 Cookie API...');
-                        chrome.runtime.sendMessage({
-                            action: 'getCookies',
-                            url: 'https://mail.chatgpt.org.uk',
-                            domain: '.chatgpt.org.uk'
-                        }, async (apiResponse) => {
-                            await this.processCookieResponse(apiResponse);
-                        });
+                    action: 'checkGPTMailTabs'
+                }, async (tabCheckResponse) => {
+                    if (!tabCheckResponse || !tabCheckResponse.success) {
+                        console.error('[Settings] 检查标签页失败:', tabCheckResponse?.error);
+                        alert('❌ 检查标签页失败: ' + (tabCheckResponse?.error || '未知错误'));
+                        return;
                     }
+
+                    console.log('[Settings] 找到 GPTMail 标签页:', tabCheckResponse.tabCount, '个');
+
+                    if (tabCheckResponse.tabCount === 0) {
+                        const confirmOpen = confirm(
+                            '⚠️ 检测到您还没有打开 GPTMail 网站\n\n' +
+                            '要获取 cf_clearance Cookie，您需要：\n' +
+                            '1. 先访问 https://mail.chatgpt.org.uk/\n' +
+                            '2. 完成 Cloudflare 人机验证\n' +
+                            '3. 然后再刷新 Cookie\n\n' +
+                            '是否现在打开 GPTMail 网站？'
+                        );
+
+                        if (confirmOpen) {
+                            chrome.runtime.sendMessage({
+                                action: 'openGPTMail'
+                            }, (openResponse) => {
+                                if (openResponse && openResponse.success) {
+                                    alert('✅ 已打开 GPTMail 网站\n\n' +
+                                          '请在新标签页中：\n' +
+                                          '1. 完成 Cloudflare 验证（如果出现）\n' +
+                                          '2. 等待页面完全加载\n' +
+                                          '3. 然后返回此处再次点击"🔄 刷新 Cookie"');
+                                } else {
+                                    alert('❌ 打开网站失败');
+                                }
+                            });
+                        }
+                        return;
+                    }
+
+                    // 首先尝试从请求头捕获的 Cookie 获取（优先级最高）
+                    console.log('[Settings] 首先尝试从请求头捕获获取...');
+                    chrome.runtime.sendMessage({
+                        action: 'getCapturedCookie'
+                    }, async (capturedResponse) => {
+                        let response;
+
+                        if (capturedResponse && capturedResponse.success && capturedResponse.hasCfClearance) {
+                            // 成功从请求头获取到 cf_clearance
+                            console.log('[Settings] ✓ 从请求头捕获成功获取！');
+                            response = capturedResponse;
+                            await this.processCookieResponse(response);
+                        } else {
+                            // 请求头没有捕获到，回退到 Cookie API
+                            console.log('[Settings] 请求头未捕获，使用 Cookie API...');
+                            chrome.runtime.sendMessage({
+                                action: 'getCookies',
+                                url: 'https://mail.chatgpt.org.uk',
+                                domain: '.chatgpt.org.uk'
+                            }, async (apiResponse) => {
+                                await this.processCookieResponse(apiResponse);
+                            });
+                        }
+                    });
                 });
             } catch (error) {
                 console.error('[Settings] 获取 Cookie 失败:', error);

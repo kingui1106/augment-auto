@@ -7,7 +7,7 @@ let capturedCfClearance = null;
 let cfClearanceLastUpdate = null;
 
 // 监听 chatgpt.org.uk 的网络请求，捕获 Cookie 头
-chrome.webRequest.onSendHeaders.addListener(
+chrome.webRequest.onBeforeSendHeaders.addListener(
     (details) => {
         // 只处理 chatgpt.org.uk 相关的请求
         if (details.url.includes('chatgpt.org.uk')) {
@@ -42,7 +42,7 @@ chrome.webRequest.onSendHeaders.addListener(
         }
     },
     { urls: ["*://*.chatgpt.org.uk/*"] },
-    ["requestHeaders"]
+    ["requestHeaders", "extraHeaders"]
 );
 
 // 监听来自 content script 的消息
@@ -52,6 +52,66 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[Background] 消息类型 (action):', request.action);
     console.log('[Background] 发送者:', sender);
     console.log('[Background] ========================================');
+
+    if (request.action === 'checkGPTMailTabs') {
+        // 检查是否有打开 GPTMail 网站的标签页
+        console.log('[Background] 检查 GPTMail 标签页...');
+
+        chrome.tabs.query({ url: 'https://mail.chatgpt.org.uk/*' }, (tabs) => {
+            console.log('[Background] 找到 GPTMail 标签页:', tabs.length, '个');
+            sendResponse({
+                success: true,
+                tabCount: tabs.length,
+                tabs: tabs.map(t => ({ id: t.id, url: t.url, title: t.title }))
+            });
+        });
+
+        return true;
+    }
+
+    if (request.action === 'debugListAllCookies') {
+        // 诊断工具：列出所有 chatgpt.org.uk 的 cookies
+        console.log('[Background] 🔍 诊断：列出所有 chatgpt.org.uk cookies...');
+
+        chrome.cookies.getAll({}, (allCookies) => {
+            // 过滤出 chatgpt.org.uk 相关的 cookies
+            const gptmailCookies = allCookies.filter(c =>
+                c.domain.includes('chatgpt.org.uk') ||
+                c.domain.includes('.chatgpt.org.uk')
+            );
+
+            console.log('[Background] 🔍 找到', gptmailCookies.length, '个 chatgpt.org.uk cookies:');
+            gptmailCookies.forEach(cookie => {
+                console.log(`  - ${cookie.name}:`, {
+                    domain: cookie.domain,
+                    path: cookie.path,
+                    httpOnly: cookie.httpOnly,
+                    secure: cookie.secure,
+                    sameSite: cookie.sameSite,
+                    value: cookie.value.substring(0, 30) + '...'
+                });
+            });
+
+            const hasCfClearance = gptmailCookies.some(c => c.name === 'cf_clearance');
+            console.log('[Background] 🔍 是否包含 cf_clearance:', hasCfClearance);
+
+            sendResponse({
+                success: true,
+                cookies: gptmailCookies.map(c => ({
+                    name: c.name,
+                    domain: c.domain,
+                    path: c.path,
+                    httpOnly: c.httpOnly,
+                    secure: c.secure,
+                    sameSite: c.sameSite,
+                    valueLength: c.value.length
+                })),
+                hasCfClearance: hasCfClearance
+            });
+        });
+
+        return true;
+    }
 
     if (request.action === 'getCapturedCookie') {
         // 返回从请求头捕获的 Cookie
