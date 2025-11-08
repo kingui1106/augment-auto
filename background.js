@@ -27,17 +27,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         console.log('[Background] 尝试的域名变体:', domainVariants);
 
-        // 使用 Promise.all 同时尝试所有域名变体
-        Promise.all(
-            domainVariants.map(d =>
-                new Promise(resolve => {
-                    chrome.cookies.getAll({ domain: d }, cookies => {
-                        console.log(`[Background] 域名 "${d}" 获取到:`, cookies.length, '个 Cookie');
-                        resolve(cookies || []);
-                    });
-                })
-            )
-        ).then(results => {
+        // 额外尝试直接获取 cf_clearance cookie
+        const cfClearanceAttempts = [
+            { name: 'cf_clearance', domain: '.chatgpt.org.uk' },
+            { name: 'cf_clearance', domain: 'chatgpt.org.uk' },
+            { name: 'cf_clearance', url: 'https://mail.chatgpt.org.uk' },
+            { name: 'cf_clearance', url: 'https://chatgpt.org.uk' },
+        ];
+
+        // 同时尝试从不同 URL 获取 cookies
+        const urlVariants = [
+            'https://mail.chatgpt.org.uk',
+            'https://chatgpt.org.uk'
+        ];
+
+        // 使用 Promise.all 同时尝试所有域名变体和 URL 变体
+        const domainPromises = domainVariants.map(d =>
+            new Promise(resolve => {
+                chrome.cookies.getAll({ domain: d }, cookies => {
+                    console.log(`[Background] 域名 "${d}" 获取到:`, cookies.length, '个 Cookie');
+                    resolve(cookies || []);
+                });
+            })
+        );
+
+        const urlPromises = urlVariants.map(u =>
+            new Promise(resolve => {
+                chrome.cookies.getAll({ url: u }, cookies => {
+                    console.log(`[Background] URL "${u}" 获取到:`, cookies.length, '个 Cookie');
+                    resolve(cookies || []);
+                });
+            })
+        );
+
+        Promise.all([...domainPromises, ...urlPromises]).then(async results => {
             // 合并所有结果并去重（根据 name+domain）
             const allCookies = [];
             const seen = new Set();
@@ -53,6 +76,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
 
             console.log('[Background] 合并后共获取到 Cookie:', allCookies.length, '个');
+
+            // 如果没有找到 cf_clearance，尝试更多方式直接获取
+            let cfClearanceCookie = allCookies.find(c => c.name === 'cf_clearance');
+
+            if (!cfClearanceCookie) {
+                console.warn('[Background] 未在初始查询中找到 cf_clearance，尝试直接获取...');
+
+                // 尝试多种方式直接获取 cf_clearance
+                for (const attempt of cfClearanceAttempts) {
+                    try {
+                        const result = await new Promise(resolve => {
+                            chrome.cookies.get(attempt, cookie => {
+                                console.log(`[Background] 尝试获取 cf_clearance:`, attempt, '结果:', cookie);
+                                resolve(cookie);
+                            });
+                        });
+
+                        if (result) {
+                            console.log('[Background] ✓ 成功通过直接查询获取到 cf_clearance!');
+                            cfClearanceCookie = result;
+
+                            // 添加到 allCookies 中
+                            const key = `${result.name}|${result.domain}`;
+                            if (!seen.has(key)) {
+                                seen.add(key);
+                                allCookies.push(result);
+                            }
+                            break;
+                        }
+                    } catch (error) {
+                        console.error('[Background] 直接获取失败:', attempt, error);
+                    }
+                }
+            }
 
             // 打印每个 Cookie 的详细信息
             allCookies.forEach(cookie => {
@@ -74,8 +131,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 console.log('[Background] Cookie 字符串长度:', cookieString.length);
                 console.log('[Background] Cookie 前200字符:', cookieString.substring(0, 200) + '...');
 
-                // 检查是否包含 cf_clearance
-                const cfClearanceCookie = allCookies.find(c => c.name === 'cf_clearance');
+                // cfClearanceCookie 已在前面定义，这里只需要检查
                 const hasCfClearance = !!cfClearanceCookie;
 
                 if (cfClearanceCookie) {
