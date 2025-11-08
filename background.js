@@ -395,8 +395,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 console.log('[Background] 🏓 进行健康检查...');
                 let contentScriptReady = false;
                 let pingRetries = 0;
-                const maxPingRetries = 10;
-                const pingDelay = 500;
+                const maxPingRetries = 3;  // 先快速尝试 3 次
+                const pingDelay = 300;
 
                 while (!contentScriptReady && pingRetries < maxPingRetries) {
                     pingRetries++;
@@ -426,13 +426,97 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     }
                 }
 
+                // 如果 content script 未就绪，刷新标签页
                 if (!contentScriptReady) {
-                    console.error('[Background] ❌ Content script 未就绪，放弃请求');
-                    sendResponse({
-                        success: false,
-                        error: 'GPTMail 页面未就绪，请稍后重试或手动访问 https://mail.chatgpt.org.uk/'
-                    });
-                    return;
+                    console.warn('[Background] ⚠️ Content script 未就绪，刷新标签页...');
+
+                    try {
+                        // 刷新标签页
+                        await chrome.tabs.reload(targetTab.id);
+                        console.log('[Background] 📄 标签页已刷新，等待加载...');
+
+                        // 等待标签页加载完成
+                        const reloadComplete = await new Promise((resolve) => {
+                            let waitTime = 0;
+                            const maxWaitTime = 10000;  // 10 秒
+                            const checkInterval = 500;
+
+                            const checkLoading = setInterval(async () => {
+                                try {
+                                    const tab = await chrome.tabs.get(targetTab.id);
+                                    waitTime += checkInterval;
+
+                                    console.log(`[Background] 等待刷新后加载... (${waitTime}ms / ${maxWaitTime}ms)`);
+
+                                    if (tab.status === 'complete') {
+                                        clearInterval(checkLoading);
+                                        console.log('[Background] ✅ 刷新后加载完成');
+                                        resolve(true);
+                                    } else if (waitTime >= maxWaitTime) {
+                                        clearInterval(checkLoading);
+                                        console.log('[Background] ❌ 刷新后加载超时');
+                                        resolve(false);
+                                    }
+                                } catch (error) {
+                                    clearInterval(checkLoading);
+                                    console.error('[Background] 检查刷新状态失败:', error);
+                                    resolve(false);
+                                }
+                            }, checkInterval);
+                        });
+
+                        if (!reloadComplete) {
+                            throw new Error('标签页刷新后加载超时');
+                        }
+
+                        // 等待 content script 注入
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+
+                        // 再次进行健康检查
+                        console.log('[Background] 🏓 刷新后再次健康检查...');
+                        pingRetries = 0;
+                        const maxPingRetriesAfterReload = 10;
+                        const pingDelayAfterReload = 500;
+
+                        while (!contentScriptReady && pingRetries < maxPingRetriesAfterReload) {
+                            pingRetries++;
+                            console.log(`[Background] Ping (${pingRetries}/${maxPingRetriesAfterReload})`);
+
+                            try {
+                                await new Promise((resolve, reject) => {
+                                    chrome.tabs.sendMessage(targetTab.id, {
+                                        action: 'pingGPTMailContent'
+                                    }, (response) => {
+                                        if (chrome.runtime.lastError) {
+                                            reject(chrome.runtime.lastError);
+                                        } else if (response && response.success) {
+                                            console.log('[Background] ✅ Content script 已就绪（刷新后）:', response);
+                                            contentScriptReady = true;
+                                            resolve();
+                                        } else {
+                                            reject(new Error('Invalid ping response'));
+                                        }
+                                    });
+                                });
+                            } catch (error) {
+                                console.warn(`[Background] Ping 失败 (${pingRetries}/${maxPingRetriesAfterReload}):`, error.message);
+                                if (pingRetries < maxPingRetriesAfterReload) {
+                                    await new Promise(resolve => setTimeout(resolve, pingDelayAfterReload));
+                                }
+                            }
+                        }
+
+                        if (!contentScriptReady) {
+                            throw new Error('刷新后 Content script 仍未就绪');
+                        }
+                    } catch (error) {
+                        console.error('[Background] ❌ 刷新标签页失败:', error);
+                        sendResponse({
+                            success: false,
+                            error: 'GPTMail 页面未就绪，请手动访问 https://mail.chatgpt.org.uk/ 并刷新页面'
+                        });
+                        return;
+                    }
                 }
 
                 // 向 content script 发送请求（带重试机制）
