@@ -132,17 +132,79 @@ StripeHelperUI.prototype.renderSettingsTab = async function() {
                     action: 'openGPTMail'
                 }, async (response) => {
                     if (response && response.success) {
-                        console.log('[Settings] 网站已打开，等待用户完成验证...');
+                        console.log('[Settings] 网站已打开，启动自动检测...');
 
-                        // 显示详细提示
-                        alert('✅ 已打开 GPTMail 网站\n\n' +
-                              '📝 请按照以下步骤操作：\n\n' +
-                              '1️⃣ 在新打开的标签页中完成 Cloudflare 人机验证\n' +
-                              '   （如果出现"验证您是人类"的页面，请完成验证）\n\n' +
-                              '2️⃣ 等待页面完全加载（约 5-10 秒）\n' +
-                              '   （确保看到正常的网站内容）\n\n' +
-                              '3️⃣ 返回本页面，点击"🔄 刷新 Cookie"按钮\n\n' +
-                              '⚠️ 重要：必须完成 Cloudflare 验证才能获取到 cf_clearance Cookie');
+                        // 显示提示并开始自动检测
+                        const startAutoDetect = confirm(
+                            '✅ 已打开 GPTMail 网站\n\n' +
+                            '📝 请在新标签页中：\n' +
+                            '1️⃣ 完成 Cloudflare 人机验证（如果出现）\n' +
+                            '2️⃣ 等待页面完全加载\n\n' +
+                            '💡 点击"确定"启用自动检测模式\n' +
+                            '系统将每 3 秒自动检测 cf_clearance cookie，\n' +
+                            '一旦检测到会自动保存并通知您。\n\n' +
+                            '点击"取消"则需要手动点击"🔄 刷新 Cookie"'
+                        );
+
+                        if (startAutoDetect) {
+                            // 启动自动检测
+                            let attempts = 0;
+                            const maxAttempts = 20; // 最多检测 60 秒（20 次 * 3 秒）
+
+                            const checkInterval = setInterval(async () => {
+                                attempts++;
+                                console.log(`[Settings] 自动检测第 ${attempts}/${maxAttempts} 次...`);
+
+                                // 优先检查请求头捕获
+                                chrome.runtime.sendMessage({
+                                    action: 'getCapturedCookie'
+                                }, async (capturedResp) => {
+                                    if (capturedResp && capturedResp.success && capturedResp.hasCfClearance) {
+                                        clearInterval(checkInterval);
+                                        console.log('[Settings] ✓✓✓ 从请求头自动检测到 cf_clearance！');
+
+                                        // 自动保存
+                                        const saved = await GPTMailConfig.saveCookie(capturedResp.cookie);
+                                        if (saved) {
+                                            alert('🎉 自动检测成功！\n\n' +
+                                                  '✅ 已从请求头检测到 cf_clearance Cookie\n' +
+                                                  '✅ 已自动保存到扩展配置\n\n' +
+                                                  '现在可以开始使用 GPTMail 邮箱服务了！');
+                                            this.renderCurrentTab();
+                                        }
+                                    } else {
+                                        // 请求头没有，尝试 Cookie API
+                                        chrome.runtime.sendMessage({
+                                            action: 'getCookies',
+                                            url: 'https://mail.chatgpt.org.uk',
+                                            domain: '.chatgpt.org.uk'
+                                        }, async (resp) => {
+                                            if (resp && resp.success && resp.hasCfClearance) {
+                                                clearInterval(checkInterval);
+                                                console.log('[Settings] ✓✓✓ 从 Cookie API 自动检测到 cf_clearance！');
+
+                                                // 自动保存
+                                                const saved = await GPTMailConfig.saveCookie(resp.cookie);
+                                                if (saved) {
+                                                    alert('🎉 自动检测成功！\n\n' +
+                                                          '✅ 已检测到 cf_clearance Cookie\n' +
+                                                          '✅ 已自动保存到扩展配置\n\n' +
+                                                          '现在可以开始使用 GPTMail 邮箱服务了！');
+                                                    this.renderCurrentTab();
+                                                }
+                                            } else if (attempts >= maxAttempts) {
+                                                clearInterval(checkInterval);
+                                                console.log('[Settings] 自动检测超时');
+                                                alert('⏱️ 自动检测超时\n\n' +
+                                                      '未能检测到 cf_clearance Cookie。\n' +
+                                                      '请确保已完成 Cloudflare 验证，\n' +
+                                                      '然后手动点击"🔄 刷新 Cookie"按钮。');
+                                            }
+                                        });
+                                    }
+                                });
+                            }, 3000); // 每 3 秒检测一次
+                        }
                     } else {
                         alert('❌ 打开网站失败');
                     }
@@ -161,57 +223,53 @@ StripeHelperUI.prototype.renderSettingsTab = async function() {
             try {
                 console.log('[Settings] 正在获取 Cookie...');
 
-                // 发送消息到后台脚本获取 Cookie
+                // 先检查是否有打开 GPTMail 网站的标签页
+                const tabs = await chrome.tabs.query({ url: 'https://mail.chatgpt.org.uk/*' });
+                console.log('[Settings] 找到 GPTMail 标签页:', tabs.length, '个');
+
+                if (tabs.length === 0) {
+                    const confirmOpen = confirm(
+                        '⚠️ 检测到您还没有打开 GPTMail 网站\n\n' +
+                        '要获取 cf_clearance Cookie，您需要：\n' +
+                        '1. 先访问 https://mail.chatgpt.org.uk/\n' +
+                        '2. 完成 Cloudflare 人机验证\n' +
+                        '3. 然后再刷新 Cookie\n\n' +
+                        '是否现在打开 GPTMail 网站？'
+                    );
+
+                    if (confirmOpen) {
+                        window.open('https://mail.chatgpt.org.uk/', '_blank');
+                        alert('✅ 已打开 GPTMail 网站\n\n' +
+                              '请在新标签页中：\n' +
+                              '1. 完成 Cloudflare 验证（如果出现）\n' +
+                              '2. 等待页面完全加载\n' +
+                              '3. 然后返回此处再次点击"🔄 刷新 Cookie"');
+                    }
+                    return;
+                }
+
+                // 首先尝试从请求头捕获的 Cookie 获取（优先级最高）
+                console.log('[Settings] 首先尝试从请求头捕获获取...');
                 chrome.runtime.sendMessage({
-                    action: 'getCookies',
-                    url: 'https://mail.chatgpt.org.uk',
-                    domain: '.chatgpt.org.uk'  // 指定域名以获取所有 Cookie
-                }, async (response) => {
-                    if (response && response.success) {
-                        const cookieString = response.cookie;
-                        const hasCfClearance = response.hasCfClearance;
+                    action: 'getCapturedCookie'
+                }, async (capturedResponse) => {
+                    let response;
 
-                        console.log('[Settings] 获取到 Cookie，长度:', cookieString.length);
-                        console.log('[Settings] 包含 cf_clearance:', hasCfClearance ? '✓' : '✗');
-
-                        // 使用 GPTMailConfig 保存 Cookie（持久化）
-                        const saved = await GPTMailConfig.saveCookie(cookieString);
-
-                        if (saved) {
-                            console.log('[Settings] ✓ Cookie 已持久化保存，共', response.count, '个');
-
-                            // 显示详细信息
-                            let message = `✅ Cookie 获取成功！\n\n` +
-                                `📊 共获取 ${response.count} 个 Cookie\n` +
-                                `📏 总长度: ${cookieString.length} 字符\n`;
-
-                            if (hasCfClearance) {
-                                message += `✓ 包含 cf_clearance（已完成配置）\n\n`;
-                                message += `已持久化保存到扩展配置，可以开始使用 GPTMail 邮箱服务！`;
-                            } else {
-                                message += `⚠️ 缺少 cf_clearance Cookie\n\n`;
-                                message += `可能的原因：\n`;
-                                message += `• 未完成 Cloudflare 人机验证\n`;
-                                message += `• 页面未完全加载\n`;
-                                message += `• Cookie 已过期\n\n`;
-                                message += `请重新执行以下步骤：\n`;
-                                message += `1. 点击"🌐 前往 GPTMail"访问网站\n`;
-                                message += `2. 完成 Cloudflare 验证\n`;
-                                message += `3. 等待 5-10 秒确保验证完成\n`;
-                                message += `4. 再次点击"🔄 刷新 Cookie"`;
-                            }
-
-                            alert(message);
-                        } else {
-                            console.error('[Settings] ✗ Cookie 保存失败');
-                            alert('❌ Cookie 保存失败，请重试');
-                        }
-
-                        // 刷新页面以显示状态
-                        this.renderCurrentTab();
+                    if (capturedResponse && capturedResponse.success && capturedResponse.hasCfClearance) {
+                        // 成功从请求头获取到 cf_clearance
+                        console.log('[Settings] ✓ 从请求头捕获成功获取！');
+                        response = capturedResponse;
+                        await this.processCookieResponse(response);
                     } else {
-                        console.error('[Settings] 获取 Cookie 失败:', response?.error);
-                        alert('❌ ' + (response?.error || '获取 Cookie 失败') + '\n\n请先访问 https://mail.chatgpt.org.uk/ 并完成验证');
+                        // 请求头没有捕获到，回退到 Cookie API
+                        console.log('[Settings] 请求头未捕获，使用 Cookie API...');
+                        chrome.runtime.sendMessage({
+                            action: 'getCookies',
+                            url: 'https://mail.chatgpt.org.uk',
+                            domain: '.chatgpt.org.uk'
+                        }, async (apiResponse) => {
+                            await this.processCookieResponse(apiResponse);
+                        });
                     }
                 });
             } catch (error) {
@@ -220,6 +278,83 @@ StripeHelperUI.prototype.renderSettingsTab = async function() {
             }
         });
     }
+
+    // 处理 Cookie 响应的辅助函数
+    this.processCookieResponse = async function(response) {
+        try {
+            if (response && response.success) {
+                const cookieString = response.cookie;
+                const hasCfClearance = response.hasCfClearance;
+                const source = response.source || 'cookie-api';
+
+                console.log('[Settings] 获取到 Cookie，长度:', cookieString.length);
+                console.log('[Settings] 包含 cf_clearance:', hasCfClearance ? '✓' : '✗');
+                console.log('[Settings] 来源:', source);
+
+                // 使用 GPTMailConfig 保存 Cookie（持久化）
+                const saved = await GPTMailConfig.saveCookie(cookieString);
+
+                if (saved) {
+                    console.log('[Settings] ✓ Cookie 已持久化保存，共', response.count, '个');
+
+                    // 显示详细信息
+                    let message = `✅ Cookie 获取成功！\n\n`;
+
+                    // 显示来源信息
+                    if (source === 'request-header') {
+                        message += `🎯 来源：网络请求头（最可靠）\n`;
+                        if (response.capturedAt) {
+                            message += `⏰ 捕获时间：${new Date(response.capturedAt).toLocaleString()}\n`;
+                        }
+                    } else {
+                        message += `📊 来源：Cookie API\n`;
+                    }
+
+                    message += `📊 共获取 ${response.count} 个 Cookie\n` +
+                        `📏 总长度: ${cookieString.length} 字符\n`;
+
+                    if (hasCfClearance) {
+                        message += `✓ 包含 cf_clearance（已完成配置）\n\n`;
+                        message += `已持久化保存到扩展配置，可以开始使用 GPTMail 邮箱服务！`;
+                    } else {
+                        message += `⚠️ 缺少 cf_clearance Cookie\n\n`;
+
+                        // 显示获取到的 cookie 名称用于诊断
+                        if (response.cookieNames && response.cookieNames.length > 0) {
+                            message += `已获取到的 Cookie: ${response.cookieNames.join(', ')}\n\n`;
+                        }
+
+                        message += `❌ 问题诊断：\n`;
+                        message += `cf_clearance 是 Cloudflare 在完成人机验证后才会设置的 Cookie。\n`;
+                        message += `如果没有这个 Cookie，说明您还没有完成验证。\n\n`;
+                        message += `📋 解决步骤：\n`;
+                        message += `1. 点击下方"🌐 前往 GPTMail"按钮\n`;
+                        message += `2. 如果出现 Cloudflare 验证页面（"验证您是人类"），\n`;
+                        message += `   请点击复选框完成验证\n`;
+                        message += `3. 等待页面完全加载，看到正常网站内容\n`;
+                        message += `4. 等待约 5-10 秒确保 Cookie 完全设置\n`;
+                        message += `5. 返回此页面，再次点击"🔄 刷新 Cookie"\n\n`;
+                        message += `💡 提示：如果始终无法获取，可能是 Cloudflare\n`;
+                        message += `   验证没有通过，请尝试刷新页面重新验证。`;
+                    }
+
+                    alert(message);
+                } else {
+                    console.error('[Settings] ✗ Cookie 保存失败');
+                    alert('❌ Cookie 保存失败，请重试');
+                }
+
+                // 刷新页面以显示状态
+                this.renderCurrentTab();
+            } else {
+                console.error('[Settings] 获取 Cookie 失败:', response?.error);
+                alert('❌ ' + (response?.error || '获取 Cookie 失败') + '\n\n请先访问 https://mail.chatgpt.org.uk/ 并完成验证');
+            }
+        } catch (error) {
+            console.error('[Settings] 处理 Cookie 响应失败:', error);
+            alert('❌ 处理失败: ' + error.message);
+        }
+    }.bind(this);
 
     // 前往 GPTMail 网站
     const btnOpenGPTMail = document.getElementById('btn-open-gptmail');

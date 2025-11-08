@@ -5,7 +5,9 @@
   "description": "强大的Stripe填表工具：卡头管理、信息预设、历史记录、批量测试，现代化UI",
   "permissions": [
     "storage",
-    "cookies"
+    "cookies",
+    "tabs",
+    "webRequest"
   ],
   "host_permissions": [
     "<all_urls>"
