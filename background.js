@@ -83,17 +83,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         domain: cfClearanceCookie.domain,
                         httpOnly: cfClearanceCookie.httpOnly,
                         secure: cfClearanceCookie.secure,
-                        value: cfClearanceCookie.value.substring(0, 50) + '...'
+                        value: cfClearanceCookie.value.substring(0, 50) + '...',
+                        expirationDate: cfClearanceCookie.expirationDate ? new Date(cfClearanceCookie.expirationDate * 1000).toISOString() : 'session'
                     });
                 } else {
                     console.warn('[Background] ✗✗✗ 未找到 cf_clearance Cookie');
+                    console.warn('[Background] 获取到的 Cookie 列表:', allCookies.map(c => c.name).join(', '));
                 }
 
                 sendResponse({
                     success: true,
                     cookie: cookieString,
                     count: allCookies.length,
-                    hasCfClearance: hasCfClearance
+                    hasCfClearance: hasCfClearance,
+                    cookieNames: allCookies.map(c => c.name)  // 返回 cookie 名称列表用于诊断
                 });
             } else {
                 console.log('[Background] 未找到 Cookie');

@@ -161,6 +161,31 @@ StripeHelperUI.prototype.renderSettingsTab = async function() {
             try {
                 console.log('[Settings] 正在获取 Cookie...');
 
+                // 先检查是否有打开 GPTMail 网站的标签页
+                const tabs = await chrome.tabs.query({ url: 'https://mail.chatgpt.org.uk/*' });
+                console.log('[Settings] 找到 GPTMail 标签页:', tabs.length, '个');
+
+                if (tabs.length === 0) {
+                    const confirmOpen = confirm(
+                        '⚠️ 检测到您还没有打开 GPTMail 网站\n\n' +
+                        '要获取 cf_clearance Cookie，您需要：\n' +
+                        '1. 先访问 https://mail.chatgpt.org.uk/\n' +
+                        '2. 完成 Cloudflare 人机验证\n' +
+                        '3. 然后再刷新 Cookie\n\n' +
+                        '是否现在打开 GPTMail 网站？'
+                    );
+
+                    if (confirmOpen) {
+                        window.open('https://mail.chatgpt.org.uk/', '_blank');
+                        alert('✅ 已打开 GPTMail 网站\n\n' +
+                              '请在新标签页中：\n' +
+                              '1. 完成 Cloudflare 验证（如果出现）\n' +
+                              '2. 等待页面完全加载\n' +
+                              '3. 然后返回此处再次点击"🔄 刷新 Cookie"');
+                    }
+                    return;
+                }
+
                 // 发送消息到后台脚本获取 Cookie
                 chrome.runtime.sendMessage({
                     action: 'getCookies',
@@ -190,15 +215,24 @@ StripeHelperUI.prototype.renderSettingsTab = async function() {
                                 message += `已持久化保存到扩展配置，可以开始使用 GPTMail 邮箱服务！`;
                             } else {
                                 message += `⚠️ 缺少 cf_clearance Cookie\n\n`;
-                                message += `可能的原因：\n`;
-                                message += `• 未完成 Cloudflare 人机验证\n`;
-                                message += `• 页面未完全加载\n`;
-                                message += `• Cookie 已过期\n\n`;
-                                message += `请重新执行以下步骤：\n`;
-                                message += `1. 点击"🌐 前往 GPTMail"访问网站\n`;
-                                message += `2. 完成 Cloudflare 验证\n`;
-                                message += `3. 等待 5-10 秒确保验证完成\n`;
-                                message += `4. 再次点击"🔄 刷新 Cookie"`;
+
+                                // 显示获取到的 cookie 名称用于诊断
+                                if (response.cookieNames && response.cookieNames.length > 0) {
+                                    message += `已获取到的 Cookie: ${response.cookieNames.join(', ')}\n\n`;
+                                }
+
+                                message += `❌ 问题诊断：\n`;
+                                message += `cf_clearance 是 Cloudflare 在完成人机验证后才会设置的 Cookie。\n`;
+                                message += `如果没有这个 Cookie，说明您还没有完成验证。\n\n`;
+                                message += `📋 解决步骤：\n`;
+                                message += `1. 点击下方"🌐 前往 GPTMail"按钮\n`;
+                                message += `2. 如果出现 Cloudflare 验证页面（"验证您是人类"），\n`;
+                                message += `   请点击复选框完成验证\n`;
+                                message += `3. 等待页面完全加载，看到正常网站内容\n`;
+                                message += `4. 等待约 5-10 秒确保 Cookie 完全设置\n`;
+                                message += `5. 返回此页面，再次点击"🔄 刷新 Cookie"\n\n`;
+                                message += `💡 提示：如果始终无法获取，可能是 Cloudflare\n`;
+                                message += `   验证没有通过，请尝试刷新页面重新验证。`;
                             }
 
                             alert(message);
