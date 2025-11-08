@@ -2,6 +2,49 @@
 
 console.log('[Background] Stripe Helper 后台服务已启动');
 
+// 存储捕获的 cf_clearance cookie
+let capturedCfClearance = null;
+let cfClearanceLastUpdate = null;
+
+// 监听 chatgpt.org.uk 的网络请求，捕获 Cookie 头
+chrome.webRequest.onSendHeaders.addListener(
+    (details) => {
+        // 只处理 chatgpt.org.uk 相关的请求
+        if (details.url.includes('chatgpt.org.uk')) {
+            // 查找 Cookie 请求头
+            const cookieHeader = details.requestHeaders?.find(
+                header => header.name.toLowerCase() === 'cookie'
+            );
+
+            if (cookieHeader && cookieHeader.value) {
+                const cookieValue = cookieHeader.value;
+
+                // 检查是否包含 cf_clearance
+                if (cookieValue.includes('cf_clearance')) {
+                    console.log('[Background] 🎯 从请求头捕获到包含 cf_clearance 的 Cookie!');
+                    console.log('[Background] URL:', details.url);
+                    console.log('[Background] Cookie 长度:', cookieValue.length);
+
+                    // 提取 cf_clearance 值
+                    const match = cookieValue.match(/cf_clearance=([^;]+)/);
+                    if (match) {
+                        const cfClearanceValue = match[1];
+                        console.log('[Background] cf_clearance 值:', cfClearanceValue.substring(0, 50) + '...');
+
+                        // 存储捕获的完整 Cookie 字符串
+                        capturedCfClearance = cookieValue;
+                        cfClearanceLastUpdate = new Date().toISOString();
+
+                        console.log('[Background] ✓ cf_clearance 已缓存，可通过消息获取');
+                    }
+                }
+            }
+        }
+    },
+    { urls: ["*://*.chatgpt.org.uk/*"] },
+    ["requestHeaders"]
+);
+
 // 监听来自 content script 的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[Background] ========================================');
@@ -9,6 +52,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[Background] 消息类型 (action):', request.action);
     console.log('[Background] 发送者:', sender);
     console.log('[Background] ========================================');
+
+    if (request.action === 'getCapturedCookie') {
+        // 返回从请求头捕获的 Cookie
+        console.log('[Background] 请求获取捕获的 Cookie');
+
+        if (capturedCfClearance) {
+            console.log('[Background] ✓ 返回捕获的 Cookie');
+            console.log('[Background] Cookie 长度:', capturedCfClearance.length);
+            console.log('[Background] 捕获时间:', cfClearanceLastUpdate);
+
+            // 解析 Cookie 字符串，计算 cookie 数量
+            const cookieCount = capturedCfClearance.split(';').filter(c => c.trim()).length;
+
+            sendResponse({
+                success: true,
+                cookie: capturedCfClearance,
+                count: cookieCount,
+                hasCfClearance: true,
+                capturedAt: cfClearanceLastUpdate,
+                source: 'request-header'
+            });
+        } else {
+            console.log('[Background] ✗ 未捕获到 Cookie');
+            sendResponse({
+                success: false,
+                error: '未捕获到 Cookie，请先访问 https://mail.chatgpt.org.uk/ 并完成验证'
+            });
+        }
+
+        return true;
+    }
 
     if (request.action === 'getCookies') {
         // 获取指定域名的所有 Cookie
