@@ -328,50 +328,102 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     if (request.action === 'fetchGPTMail') {
-        // 通过后台脚本发起请求，绕过 CORS 限制
+        // 通过在 GPTMail 页面的 content script 发起请求，绕过 Cloudflare 检测
         const { url, method, headers, body } = request;
 
-        console.log('[Background] 发起 GPTMail 请求:', url);
+        console.log('[Background] 收到 GPTMail 请求:', url);
         console.log('[Background] 请求头:', headers);
 
-        fetch(url, {
-            method: method || 'GET',
-            headers: headers || {},
-            body: body
-        })
-        .then(response => {
-            console.log('[Background] 响应状态:', response.status);
+        // 查找已打开的 GPTMail 标签页
+        chrome.tabs.query({ url: '*://*.chatgpt.org.uk/*' }, async (tabs) => {
+            try {
+                let targetTab = null;
 
-            // 读取响应内容
-            return response.text().then(text => {
-                let data;
-                try {
-                    data = JSON.parse(text);
-                } catch (e) {
-                    data = text;
+                if (tabs && tabs.length > 0) {
+                    // 使用第一个找到的 GPTMail 标签页
+                    targetTab = tabs[0];
+                    console.log('[Background] 找到 GPTMail 标签页:', targetTab.id, targetTab.url);
+                } else {
+                    // 没有找到，创建一个新的标签页
+                    console.log('[Background] 未找到 GPTMail 标签页，创建新标签页...');
+                    targetTab = await chrome.tabs.create({
+                        url: 'https://mail.chatgpt.org.uk/',
+                        active: false  // 在后台打开
+                    });
+
+                    console.log('[Background] 已创建标签页:', targetTab.id);
+
+                    // 等待标签页加载完成（最多等待 30 秒）
+                    const loadComplete = await new Promise((resolve) => {
+                        let waitTime = 0;
+                        const maxWaitTime = 30000;  // 30 秒
+                        const checkInterval = 500;   // 每 500ms 检查一次
+
+                        const checkLoading = setInterval(async () => {
+                            try {
+                                const tab = await chrome.tabs.get(targetTab.id);
+                                waitTime += checkInterval;
+
+                                console.log(`[Background] 等待标签页加载... (${waitTime}ms / ${maxWaitTime}ms)`);
+
+                                if (tab.status === 'complete') {
+                                    clearInterval(checkLoading);
+                                    console.log('[Background] 标签页加载完成');
+                                    resolve(true);
+                                } else if (waitTime >= maxWaitTime) {
+                                    clearInterval(checkLoading);
+                                    console.log('[Background] 标签页加载超时');
+                                    resolve(false);
+                                }
+                            } catch (error) {
+                                clearInterval(checkLoading);
+                                console.error('[Background] 检查标签页状态失败:', error);
+                                resolve(false);
+                            }
+                        }, checkInterval);
+                    });
+
+                    if (!loadComplete) {
+                        throw new Error('GPTMail 标签页加载超时');
+                    }
+
+                    // 等待 content script 注入（额外等待 1 秒）
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                 }
 
-                return {
-                    success: response.ok,
-                    status: response.status,
-                    statusText: response.statusText,
-                    data: data
-                };
-            });
-        })
-        .then(result => {
-            console.log('[Background] 请求成功:', result);
-            sendResponse(result);
-        })
-        .catch(error => {
-            console.error('[Background] 请求失败:', error);
-            sendResponse({
-                success: false,
-                error: error.message
-            });
+                // 向 content script 发送请求
+                console.log('[Background] 向标签页发送请求消息:', targetTab.id);
+
+                chrome.tabs.sendMessage(targetTab.id, {
+                    action: 'fetchGPTMailInPage',
+                    url: url,
+                    method: method,
+                    headers: headers,
+                    body: body
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('[Background] 发送消息失败:', chrome.runtime.lastError);
+                        sendResponse({
+                            success: false,
+                            error: '无法与 GPTMail 页面通信: ' + chrome.runtime.lastError.message
+                        });
+                    } else {
+                        console.log('[Background] 收到 content script 响应:', response);
+                        console.log('[Background] 响应状态:', response.status);
+                        console.log('[Background] 响应头:', response.headers);
+                        sendResponse(response);
+                    }
+                });
+            } catch (error) {
+                console.error('[Background] fetchGPTMail 失败:', error);
+                sendResponse({
+                    success: false,
+                    error: error.message
+                });
+            }
         });
 
-        return true;
+        return true;  // 异步响应
     }
 
     // ==================== 设置GPTMail Cookie ====================

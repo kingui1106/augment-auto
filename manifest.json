@@ -39,6 +39,16 @@
       ],
       "css": ["styles.css"],
       "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.chatgpt.org.uk/*"
+      ],
+      "js": [
+        "gptmail-content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
     }
   ],
   "icons": {
