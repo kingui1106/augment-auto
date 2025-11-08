@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "Stripe Checkout 智能填表助手 Pro",
+  "version": "2.0.1",
+  "description": "强大的Stripe填表工具：卡头管理、信息预设、历史记录、批量测试，现代化UI",
+  "permissions": [
+    "storage",
+    "cookies"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "js/storage.js",
+        "js/defaults.js",
+        "js/data-manager.js",
+        "js/default-email-config.js",
+        "js/gptmail-config.js",
+        "js/utils.js",
+        "js/submit-button.js",
+        "js/form-filler.js",
+        "js/register-helper.js",
+        "js/ui-base.js",
+        "js/ui-modals.js",
+        "js/ui-tabs-fill-cards.js",
+        "js/ui-tabs-profiles-history.js",
+        "js/ui-tabs-settings-about.js",
+        "content.js"
+      ],
+      "css": ["styles.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Stripe 填表助手"
+  }
+}
+

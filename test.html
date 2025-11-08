@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stripe 扩展测试页面</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .info {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        .test-info {
+            margin-top: 30px;
+            padding: 20px;
+            background: #e3f2fd;
+            border-radius: 8px;
+        }
+        .test-info h3 {
+            color: #1976d2;
+            margin-top: 0;
+        }
+        .test-info ul {
+            line-height: 1.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💳 Stripe 扩展测试页面</h1>
+        
+        <div class="info">
+            <strong>📌 测试说明：</strong><br>
+            1. 确保已安装并启用 Stripe 助手扩展<br>
+            2. 页面右上角应该会出现 "💳 Stripe助手" 按钮<br>
+            3. 点击按钮打开面板，选择配置和卡头<br>
+            4. 点击"仅填表"或"填表+提交"按钮测试功能
+        </div>
+
+        <form id="test-form">
+            <div class="form-group">
+                <label for="billingName">持卡人姓名</label>
+                <input type="text" id="billingName" placeholder="请输入姓名">
+            </div>
+
+            <div class="form-group">
+                <label for="billingCountry">国家</label>
+                <select id="billingCountry">
+                    <option value="">请选择国家</option>
+                    <option value="CN">中国</option>
+                    <option value="US">美国</option>
+                    <option value="GB">英国</option>
+                    <option value="JP">日本</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="billingPostalCode">邮政编码</label>
+                <input type="text" id="billingPostalCode" placeholder="请输入邮编">
+            </div>
+
+            <div class="form-group">
+                <label for="billingAdministrativeArea">省/州</label>
+                <input type="text" id="billingAdministrativeArea" placeholder="请输入省/州">
+            </div>
+
+            <div class="form-group">
+                <label for="billingLocality">城市</label>
+                <input type="text" id="billingLocality" placeholder="请输入城市">
+            </div>
+
+            <div class="form-group">
+                <label for="billingDependentLocality">地区</label>
+                <input type="text" id="billingDependentLocality" placeholder="请输入地区">
+            </div>
+
+            <div class="form-group">
+                <label for="billingAddressLine1">详细地址</label>
+                <input type="text" id="billingAddressLine1" placeholder="请输入详细地址">
+            </div>
+
+            <button type="submit">提交表单</button>
+        </form>
+
+        <div class="test-info">
+            <h3>🧪 测试步骤</h3>
+            <ul>
+                <li>打开浏览器扩展管理页面（chrome://extensions/ 或 edge://extensions/）</li>
+                <li>启用"开发者模式"</li>
+                <li>点击"加载已解压的扩展程序"</li>
+                <li>选择 stripe-helper-extension 文件夹</li>
+                <li>刷新此页面，应该会看到右上角的 "💳 Stripe助手" 按钮</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('test-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            alert('表单提交成功！\n\n这是一个测试页面，实际不会提交数据。');
+        });
+    </script>
+</body>
+</html>
+
