@@ -19,13 +19,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.log('[Background] URL:', url);
         console.log('[Background] Domain:', domain);
 
-        // 使用 domain 参数来获取所有 Cookie（包括 HttpOnly）
-        chrome.cookies.getAll({ domain: domain }, (cookies) => {
-            console.log('[Background] 获取到 Cookie:', cookies.length, '个');
+        // 尝试多种方式获取 Cookie 以确保兼容性
+        const domainVariants = [
+            domain,                        // .chatgpt.org.uk
+            domain.replace(/^\./, ''),     // chatgpt.org.uk (去掉前导点)
+        ];
+
+        console.log('[Background] 尝试的域名变体:', domainVariants);
+
+        // 使用 Promise.all 同时尝试所有域名变体
+        Promise.all(
+            domainVariants.map(d =>
+                new Promise(resolve => {
+                    chrome.cookies.getAll({ domain: d }, cookies => {
+                        console.log(`[Background] 域名 "${d}" 获取到:`, cookies.length, '个 Cookie');
+                        resolve(cookies || []);
+                    });
+                })
+            )
+        ).then(results => {
+            // 合并所有结果并去重（根据 name+domain）
+            const allCookies = [];
+            const seen = new Set();
+
+            results.forEach(cookies => {
+                cookies.forEach(cookie => {
+                    const key = `${cookie.name}|${cookie.domain}`;
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        allCookies.push(cookie);
+                    }
+                });
+            });
+
+            console.log('[Background] 合并后共获取到 Cookie:', allCookies.length, '个');
 
             // 打印每个 Cookie 的详细信息
-            cookies.forEach(cookie => {
+            allCookies.forEach(cookie => {
                 console.log(`[Background] Cookie: ${cookie.name}`, {
+                    value: cookie.value.substring(0, 50) + '...',
                     httpOnly: cookie.httpOnly,
                     secure: cookie.secure,
                     domain: cookie.domain,
@@ -33,9 +65,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 });
             });
 
-            if (cookies && cookies.length > 0) {
+            if (allCookies && allCookies.length > 0) {
                 // 将 Cookie 数组转换为字符串格式
-                const cookieString = cookies.map(cookie => {
+                const cookieString = allCookies.map(cookie => {
                     return `${cookie.name}=${cookie.value}`;
                 }).join('; ');
 
@@ -43,22 +75,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 console.log('[Background] Cookie 前200字符:', cookieString.substring(0, 200) + '...');
 
                 // 检查是否包含 cf_clearance
-                const hasCfClearance = cookieString.includes('cf_clearance');
-                console.log('[Background] 包含 cf_clearance:', hasCfClearance ? '✓' : '✗');
+                const cfClearanceCookie = allCookies.find(c => c.name === 'cf_clearance');
+                const hasCfClearance = !!cfClearanceCookie;
+
+                if (cfClearanceCookie) {
+                    console.log('[Background] ✓✓✓ 找到 cf_clearance Cookie:', {
+                        domain: cfClearanceCookie.domain,
+                        httpOnly: cfClearanceCookie.httpOnly,
+                        secure: cfClearanceCookie.secure,
+                        value: cfClearanceCookie.value.substring(0, 50) + '...'
+                    });
+                } else {
+                    console.warn('[Background] ✗✗✗ 未找到 cf_clearance Cookie');
+                }
 
                 sendResponse({
                     success: true,
                     cookie: cookieString,
-                    count: cookies.length,
+                    count: allCookies.length,
                     hasCfClearance: hasCfClearance
                 });
             } else {
                 console.log('[Background] 未找到 Cookie');
                 sendResponse({
                     success: false,
-                    error: '未找到 Cookie，请先访问网站'
+                    error: '未找到 Cookie，请先访问 https://mail.chatgpt.org.uk/ 并完成 Cloudflare 验证'
                 });
             }
+        }).catch(error => {
+            console.error('[Background] 获取 Cookie 失败:', error);
+            sendResponse({
+                success: false,
+                error: '获取 Cookie 失败: ' + error.message
+            });
         });
 
         // 返回 true 表示异步响应
