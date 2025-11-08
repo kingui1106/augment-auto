@@ -6,6 +6,13 @@ console.log('[Background] Stripe Helper 后台服务已启动');
 let capturedCfClearance = null;
 let cfClearanceLastUpdate = null;
 
+// ==================== 扩展图标点击监听器 ====================
+// 点击扩展图标时打开GPTMail网站进行CF验证
+chrome.action.onClicked.addListener(function (tab) {
+    console.log('[Background] 扩展图标被点击，打开GPTMail网站');
+    chrome.tabs.create({url: 'https://mail.chatgpt.org.uk/'});
+});
+
 // 监听 chatgpt.org.uk 的网络请求，捕获 Cookie 头
 chrome.webRequest.onBeforeSendHeaders.addListener(
     (details) => {
@@ -363,6 +370,68 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 error: error.message
             });
         });
+
+        return true;
+    }
+
+    // ==================== 设置GPTMail Cookie ====================
+    // 参考ChatGPTAuthHelper的实现：管理GPTMail域名的cookie
+    if (request.action === "setGPTMailCookies") {
+        const targetUrl = request.url;
+        const cookiesToSet = request.cookies; // {name: value} 对象
+        const domain = "chatgpt.org.uk";
+
+        console.log('[Background] 设置GPTMail Cookies');
+        console.log('[Background] 目标URL:', targetUrl);
+        console.log('[Background] 要设置的Cookies:', cookiesToSet);
+
+        try {
+            // 1. 获取当前所有cookies
+            chrome.cookies.getAll({domain: domain}, async (existingCookies) => {
+                console.log('[Background] 现有Cookies数量:', existingCookies.length);
+
+                // 2. 删除所有cookies（除了cf_clearance）
+                for (let cookie of existingCookies) {
+                    if (cookie.name === "cf_clearance") {
+                        console.log('[Background] 保留 cf_clearance cookie');
+                        continue;
+                    }
+
+                    await chrome.cookies.remove({
+                        url: `https://${domain}/`,
+                        name: cookie.name
+                    });
+                    console.log('[Background] 已删除cookie:', cookie.name);
+                }
+
+                // 3. 设置新的cookies
+                if (cookiesToSet) {
+                    for (let [name, value] of Object.entries(cookiesToSet)) {
+                        await chrome.cookies.set({
+                            url: `https://${domain}/`,
+                            name: name,
+                            value: value,
+                            path: "/",
+                            secure: true,
+                            httpOnly: true
+                        });
+                        console.log('[Background] 已设置cookie:', name);
+                    }
+                }
+
+                // 4. 如果提供了目标URL，跳转到该URL
+                if (targetUrl && sender.tab && sender.tab.id) {
+                    await chrome.tabs.update(sender.tab.id, {url: targetUrl});
+                    console.log('[Background] 已跳转到:', targetUrl);
+                    sendResponse({status: "success", message: "Cookies已设置并已跳转"});
+                } else {
+                    sendResponse({status: "success", message: "Cookies已设置"});
+                }
+            });
+        } catch (error) {
+            console.error('[Background] 设置Cookies失败:', error);
+            sendResponse({status: "failure", message: error.message});
+        }
 
         return true;
     }
