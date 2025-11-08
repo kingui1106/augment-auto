@@ -2,20 +2,25 @@
 // 在 mail.chatgpt.org.uk 页面中运行，用于在真实浏览器环境中发起请求
 // 这样可以绕过 Cloudflare 的反爬虫检测
 
-console.log('[GPTMail Content] GPTMail Content Script 已加载');
-console.log('[GPTMail Content] 当前页面:', window.location.href);
+console.log('==========================================');
+console.log('[GPTMail Content] 🚀 GPTMail Content Script 已加载');
+console.log('[GPTMail Content] 📍 当前页面:', window.location.href);
+console.log('[GPTMail Content] 🕐 加载时间:', new Date().toISOString());
+console.log('[GPTMail Content] 📄 文档状态:', document.readyState);
+console.log('==========================================');
 
 // 监听来自 background script 的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log('[GPTMail Content] 收到消息:', request);
+    console.log('[GPTMail Content] 📩 收到消息:', request);
+    console.log('[GPTMail Content] 📮 发送者:', sender);
 
     // 处理 GPTMail API 请求
     if (request.action === 'fetchGPTMailInPage') {
         const { url, method, headers } = request;
 
-        console.log('[GPTMail Content] 在页面上下文中发起请求:', url);
-        console.log('[GPTMail Content] 请求方法:', method || 'GET');
-        console.log('[GPTMail Content] 请求头:', headers);
+        console.log('[GPTMail Content] 🌐 在页面上下文中发起请求:', url);
+        console.log('[GPTMail Content] 📝 请求方法:', method || 'GET');
+        console.log('[GPTMail Content] 📋 请求头:', headers);
 
         // 在页面上下文中使用原生 fetch，自动携带页面的 Cookie 和浏览器指纹
         fetch(url, {
@@ -35,8 +40,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             mode: 'cors'
         })
         .then(response => {
-            console.log('[GPTMail Content] 响应状态:', response.status, response.statusText);
-            console.log('[GPTMail Content] 响应头:', response.headers);
+            console.log('[GPTMail Content] ✅ 响应状态:', response.status, response.statusText);
+            console.log('[GPTMail Content] 📋 响应头:', response.headers);
 
             // 读取响应头
             const responseHeaders = {};
@@ -49,10 +54,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 let data;
                 try {
                     data = JSON.parse(text);
-                    console.log('[GPTMail Content] 响应数据 (JSON):', data);
+                    console.log('[GPTMail Content] 📦 响应数据 (JSON):', data);
                 } catch (e) {
                     data = text;
-                    console.log('[GPTMail Content] 响应数据 (文本):', text.substring(0, 200) + '...');
+                    console.log('[GPTMail Content] 📄 响应数据 (文本):', text.substring(0, 200) + '...');
                 }
 
                 return {
@@ -65,11 +70,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
         })
         .then(result => {
-            console.log('[GPTMail Content] 请求成功:', result);
+            console.log('[GPTMail Content] ✅ 请求成功，发送响应:', result);
             sendResponse(result);
         })
         .catch(error => {
-            console.error('[GPTMail Content] 请求失败:', error);
+            console.error('[GPTMail Content] ❌ 请求失败:', error);
             sendResponse({
                 success: false,
                 status: 0,
@@ -84,14 +89,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     // 健康检查
     if (request.action === 'pingGPTMailContent') {
-        console.log('[GPTMail Content] 收到 ping，返回 pong');
+        console.log('[GPTMail Content] 🏓 收到 ping，返回 pong');
         sendResponse({
             success: true,
             message: 'pong',
-            url: window.location.href
+            url: window.location.href,
+            timestamp: new Date().toISOString()
         });
         return true;
     }
+
+    // 未知消息
+    console.warn('[GPTMail Content] ⚠️ 未知消息:', request.action);
+    sendResponse({
+        success: false,
+        error: 'Unknown action: ' + request.action
+    });
+    return true;
 });
 
-console.log('[GPTMail Content] 消息监听器已注册');
+console.log('[GPTMail Content] ✅ 消息监听器已注册');
+console.log('[GPTMail Content] 🎯 准备接收来自 background script 的请求');

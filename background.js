@@ -391,29 +391,105 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     await new Promise(resolve => setTimeout(resolve, 1000));
                 }
 
-                // 向 content script 发送请求
-                console.log('[Background] 向标签页发送请求消息:', targetTab.id);
+                // 先进行健康检查，确保 content script 已准备好
+                console.log('[Background] 🏓 进行健康检查...');
+                let contentScriptReady = false;
+                let pingRetries = 0;
+                const maxPingRetries = 10;
+                const pingDelay = 500;
 
-                chrome.tabs.sendMessage(targetTab.id, {
-                    action: 'fetchGPTMailInPage',
-                    url: url,
-                    method: method,
-                    headers: headers,
-                    body: body
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.error('[Background] 发送消息失败:', chrome.runtime.lastError);
-                        sendResponse({
-                            success: false,
-                            error: '无法与 GPTMail 页面通信: ' + chrome.runtime.lastError.message
+                while (!contentScriptReady && pingRetries < maxPingRetries) {
+                    pingRetries++;
+                    console.log(`[Background] Ping (${pingRetries}/${maxPingRetries})`);
+
+                    try {
+                        await new Promise((resolve, reject) => {
+                            chrome.tabs.sendMessage(targetTab.id, {
+                                action: 'pingGPTMailContent'
+                            }, (response) => {
+                                if (chrome.runtime.lastError) {
+                                    reject(chrome.runtime.lastError);
+                                } else if (response && response.success) {
+                                    console.log('[Background] ✅ Content script 已就绪:', response);
+                                    contentScriptReady = true;
+                                    resolve();
+                                } else {
+                                    reject(new Error('Invalid ping response'));
+                                }
+                            });
                         });
-                    } else {
-                        console.log('[Background] 收到 content script 响应:', response);
-                        console.log('[Background] 响应状态:', response.status);
-                        console.log('[Background] 响应头:', response.headers);
-                        sendResponse(response);
+                    } catch (error) {
+                        console.warn(`[Background] Ping 失败 (${pingRetries}/${maxPingRetries}):`, error.message);
+                        if (pingRetries < maxPingRetries) {
+                            await new Promise(resolve => setTimeout(resolve, pingDelay));
+                        }
                     }
-                });
+                }
+
+                if (!contentScriptReady) {
+                    console.error('[Background] ❌ Content script 未就绪，放弃请求');
+                    sendResponse({
+                        success: false,
+                        error: 'GPTMail 页面未就绪，请稍后重试或手动访问 https://mail.chatgpt.org.uk/'
+                    });
+                    return;
+                }
+
+                // 向 content script 发送请求（带重试机制）
+                console.log('[Background] 📤 向标签页发送请求消息:', targetTab.id);
+
+                // 重试发送消息，最多尝试 3 次（已经确认 content script 就绪，不需要太多重试）
+                let retryCount = 0;
+                const maxRetries = 3;
+                const retryDelay = 1000; // 1 秒
+
+                const sendMessageWithRetry = async () => {
+                    while (retryCount < maxRetries) {
+                        retryCount++;
+                        console.log(`[Background] 尝试发送消息 (${retryCount}/${maxRetries})`);
+
+                        try {
+                            const response = await new Promise((resolve, reject) => {
+                                chrome.tabs.sendMessage(targetTab.id, {
+                                    action: 'fetchGPTMailInPage',
+                                    url: url,
+                                    method: method,
+                                    headers: headers,
+                                    body: body
+                                }, (response) => {
+                                    if (chrome.runtime.lastError) {
+                                        reject(chrome.runtime.lastError);
+                                    } else {
+                                        resolve(response);
+                                    }
+                                });
+                            });
+
+                            // 成功
+                            console.log('[Background] ✅ 收到 content script 响应:', response);
+                            console.log('[Background] 响应状态:', response.status);
+                            console.log('[Background] 响应头:', response.headers);
+                            sendResponse(response);
+                            return;
+                        } catch (error) {
+                            console.error(`[Background] ❌ 发送消息失败 (尝试 ${retryCount}/${maxRetries}):`, error.message);
+
+                            if (retryCount < maxRetries) {
+                                console.log(`[Background] 等待 ${retryDelay}ms 后重试...`);
+                                await new Promise(resolve => setTimeout(resolve, retryDelay));
+                            } else {
+                                // 所有重试都失败
+                                console.error('[Background] ❌ 所有重试都失败');
+                                sendResponse({
+                                    success: false,
+                                    error: '无法与 GPTMail 页面通信，请确保已访问过 https://mail.chatgpt.org.uk/ 并完成验证'
+                                });
+                            }
+                        }
+                    }
+                };
+
+                sendMessageWithRetry();
             } catch (error) {
                 console.error('[Background] fetchGPTMail 失败:', error);
                 sendResponse({
