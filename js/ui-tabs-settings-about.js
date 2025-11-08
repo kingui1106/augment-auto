@@ -44,6 +44,19 @@ StripeHelperUI.prototype.renderSettingsTab = async function() {
                         : '<br><span style="color: #f59e0b; font-weight: 500;">⚠️ Cookie 已配置但缺少 cf_clearance</span>')
                     : '<br><span style="color: #ef4444; font-weight: 500;">❌ 未配置 Cookie</span>'}
             </div>
+            ${!hasCookie || !hasCfClearance ? `
+                <div style="margin-top: 12px; padding: 12px; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 4px; font-size: 13px; line-height: 1.6;">
+                    <div style="font-weight: 600; margin-bottom: 6px;">📌 重要提示：如何获取 cf_clearance Cookie</div>
+                    <div style="color: #92400e;">
+                        1️⃣ 点击下方"🚀 自动获取 Cookie"按钮<br>
+                        2️⃣ 在打开的新标签页中<strong>完成 Cloudflare 人机验证</strong><br>
+                        3️⃣ 等待页面完全加载后，返回此处<br>
+                        4️⃣ 点击"🔄 刷新 Cookie"按钮完成配置<br>
+                        <br>
+                        <strong>⚠️ 如果获取失败</strong>：请确保已完成人机验证并等待页面完全加载
+                    </div>
+                </div>
+            ` : ''}
             <div class="card-item-actions" style="margin-top: 12px;">
                 <button class="icon-btn" id="btn-open-and-get-cookie">🚀 自动获取 Cookie</button>
                 <button class="icon-btn" id="btn-get-cookie">🔄 刷新 Cookie</button>
@@ -119,10 +132,17 @@ StripeHelperUI.prototype.renderSettingsTab = async function() {
                     action: 'openGPTMail'
                 }, async (response) => {
                     if (response && response.success) {
-                        console.log('[Settings] 网站已打开，等待 3 秒后获取 Cookie...');
+                        console.log('[Settings] 网站已打开，等待用户完成验证...');
 
-                        // 显示提示
-                        alert('✅ 已打开 GPTMail 网站\n\n请等待页面完全加载后，点击"🔄 刷新 Cookie"按钮获取 Cookie');
+                        // 显示详细提示
+                        alert('✅ 已打开 GPTMail 网站\n\n' +
+                              '📝 请按照以下步骤操作：\n\n' +
+                              '1️⃣ 在新打开的标签页中完成 Cloudflare 人机验证\n' +
+                              '   （如果出现"验证您是人类"的页面，请完成验证）\n\n' +
+                              '2️⃣ 等待页面完全加载（约 5-10 秒）\n' +
+                              '   （确保看到正常的网站内容）\n\n' +
+                              '3️⃣ 返回本页面，点击"🔄 刷新 Cookie"按钮\n\n' +
+                              '⚠️ 重要：必须完成 Cloudflare 验证才能获取到 cf_clearance Cookie');
                     } else {
                         alert('❌ 打开网站失败');
                     }
@@ -161,11 +181,25 @@ StripeHelperUI.prototype.renderSettingsTab = async function() {
                             console.log('[Settings] ✓ Cookie 已持久化保存，共', response.count, '个');
 
                             // 显示详细信息
-                            const message = `✅ Cookie 获取成功！\n\n` +
+                            let message = `✅ Cookie 获取成功！\n\n` +
                                 `📊 共获取 ${response.count} 个 Cookie\n` +
-                                `📏 总长度: ${cookieString.length} 字符\n` +
-                                `${hasCfClearance ? '✓ 包含 cf_clearance（可以使用）' : '⚠️ 缺少 cf_clearance（可能无法使用）'}\n\n` +
-                                `已持久化保存到扩展配置`;
+                                `📏 总长度: ${cookieString.length} 字符\n`;
+
+                            if (hasCfClearance) {
+                                message += `✓ 包含 cf_clearance（已完成配置）\n\n`;
+                                message += `已持久化保存到扩展配置，可以开始使用 GPTMail 邮箱服务！`;
+                            } else {
+                                message += `⚠️ 缺少 cf_clearance Cookie\n\n`;
+                                message += `可能的原因：\n`;
+                                message += `• 未完成 Cloudflare 人机验证\n`;
+                                message += `• 页面未完全加载\n`;
+                                message += `• Cookie 已过期\n\n`;
+                                message += `请重新执行以下步骤：\n`;
+                                message += `1. 点击"🌐 前往 GPTMail"访问网站\n`;
+                                message += `2. 完成 Cloudflare 验证\n`;
+                                message += `3. 等待 5-10 秒确保验证完成\n`;
+                                message += `4. 再次点击"🔄 刷新 Cookie"`;
+                            }
 
                             alert(message);
                         } else {
