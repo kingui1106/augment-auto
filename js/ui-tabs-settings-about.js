@@ -132,17 +132,59 @@ StripeHelperUI.prototype.renderSettingsTab = async function() {
                     action: 'openGPTMail'
                 }, async (response) => {
                     if (response && response.success) {
-                        console.log('[Settings] 网站已打开，等待用户完成验证...');
+                        console.log('[Settings] 网站已打开，启动自动检测...');
 
-                        // 显示详细提示
-                        alert('✅ 已打开 GPTMail 网站\n\n' +
-                              '📝 请按照以下步骤操作：\n\n' +
-                              '1️⃣ 在新打开的标签页中完成 Cloudflare 人机验证\n' +
-                              '   （如果出现"验证您是人类"的页面，请完成验证）\n\n' +
-                              '2️⃣ 等待页面完全加载（约 5-10 秒）\n' +
-                              '   （确保看到正常的网站内容）\n\n' +
-                              '3️⃣ 返回本页面，点击"🔄 刷新 Cookie"按钮\n\n' +
-                              '⚠️ 重要：必须完成 Cloudflare 验证才能获取到 cf_clearance Cookie');
+                        // 显示提示并开始自动检测
+                        const startAutoDetect = confirm(
+                            '✅ 已打开 GPTMail 网站\n\n' +
+                            '📝 请在新标签页中：\n' +
+                            '1️⃣ 完成 Cloudflare 人机验证（如果出现）\n' +
+                            '2️⃣ 等待页面完全加载\n\n' +
+                            '💡 点击"确定"启用自动检测模式\n' +
+                            '系统将每 3 秒自动检测 cf_clearance cookie，\n' +
+                            '一旦检测到会自动保存并通知您。\n\n' +
+                            '点击"取消"则需要手动点击"🔄 刷新 Cookie"'
+                        );
+
+                        if (startAutoDetect) {
+                            // 启动自动检测
+                            let attempts = 0;
+                            const maxAttempts = 20; // 最多检测 60 秒（20 次 * 3 秒）
+
+                            const checkInterval = setInterval(async () => {
+                                attempts++;
+                                console.log(`[Settings] 自动检测第 ${attempts}/${maxAttempts} 次...`);
+
+                                // 检查 cf_clearance
+                                chrome.runtime.sendMessage({
+                                    action: 'getCookies',
+                                    url: 'https://mail.chatgpt.org.uk',
+                                    domain: '.chatgpt.org.uk'
+                                }, async (resp) => {
+                                    if (resp && resp.success && resp.hasCfClearance) {
+                                        clearInterval(checkInterval);
+                                        console.log('[Settings] ✓✓✓ 自动检测到 cf_clearance！');
+
+                                        // 自动保存
+                                        const saved = await GPTMailConfig.saveCookie(resp.cookie);
+                                        if (saved) {
+                                            alert('🎉 自动检测成功！\n\n' +
+                                                  '✅ 已检测到 cf_clearance Cookie\n' +
+                                                  '✅ 已自动保存到扩展配置\n\n' +
+                                                  '现在可以开始使用 GPTMail 邮箱服务了！');
+                                            this.renderCurrentTab();
+                                        }
+                                    } else if (attempts >= maxAttempts) {
+                                        clearInterval(checkInterval);
+                                        console.log('[Settings] 自动检测超时');
+                                        alert('⏱️ 自动检测超时\n\n' +
+                                              '未能检测到 cf_clearance Cookie。\n' +
+                                              '请确保已完成 Cloudflare 验证，\n' +
+                                              '然后手动点击"🔄 刷新 Cookie"按钮。');
+                                    }
+                                });
+                            }, 3000); // 每 3 秒检测一次
+                        }
                     } else {
                         alert('❌ 打开网站失败');
                     }
